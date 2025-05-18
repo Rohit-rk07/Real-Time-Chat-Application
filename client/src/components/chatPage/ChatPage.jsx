@@ -10,7 +10,7 @@ import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 
 // Server URL - replace with your actual backend URL
-const SERVER_URL = "http://localhost:8000/";
+const SERVER_URL = "http://localhost:8000";
 
 // Socket.io connection
 let socket;
@@ -61,13 +61,14 @@ const ChatPage = () => {
         headers: { Authorization: `Bearer ${userData.token}` }
       });
       
-      // Format messages for display
+      // Format messages for display with UID
       const formattedMessages = response.data.map(msg => ({
         id: msg._id,
         user: msg.sender.name,
         message: msg.content,
         timestamp: new Date(msg.timestamp),
-        isMine: msg.sender._id === userData.id
+        isMine: msg.sender._id === userData.id,
+        uid: msg.sender._id  // Add UID to message object
       }));
       
       setMessages(formattedMessages.reverse());
@@ -138,15 +139,24 @@ const ChatPage = () => {
 
     // Event listeners for messages
     socket.on("welcome", (data) => {
-      setMessages(prev => [...prev, data]);
+      setMessages(prev => [...prev, {
+        ...data,
+        uid: data.uid || data.userId  // Ensure UID is included
+      }]);
     });
 
     socket.on("userJoined", (data) => {
-      setMessages(prev => [...prev, data]);
+      setMessages(prev => [...prev, {
+        ...data,
+        uid: data.uid || data.userId  // Ensure UID is included
+      }]);
     });
 
     socket.on("leave", (data) => {
-      setMessages(prev => [...prev, data]);
+      setMessages(prev => [...prev, {
+        ...data,
+        uid: data.uid || data.userId  // Ensure UID is included
+      }]);
     });
 
     socket.on("userList", (userList) => {
@@ -178,7 +188,8 @@ const ChatPage = () => {
       socket.on("sendMessage", (data) => {
         const newMessage = {
           ...data,
-          isMine: data.id === socketId
+          isMine: data.id === socketId,
+          uid: data.uid  // Ensure UID is passed through
         };
         setMessages(prev => [...prev, newMessage]);
       });

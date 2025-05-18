@@ -1,5 +1,3 @@
-// server.js - Backend server implementation without MongoDB or JWT
-
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -10,27 +8,22 @@ const crypto = require('crypto');
 const app = express();
 const server = http.createServer(app);
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// In-memory data stores
-const users = new Map(); // email -> user
-const usersById = new Map(); // userId -> user
-const sessions = new Map(); // sessionToken -> userId
+const users = new Map(); 
+const usersById = new Map(); 
+const sessions = new Map(); 
 const messages = [];
 
-// Generate a unique ID (simple implementation)
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
 
-// Generate a session token
 function generateSessionToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// Socket.io setup
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -38,10 +31,9 @@ const io = new Server(server, {
   }
 });
 
-// Store online users
 const onlineUsers = new Map();
 
-// Authentication middleware for socket.io
+// Socket.io middleware for authentication
 io.use(async (socket, next) => {
   try {
     const sessionToken = socket.handshake.auth.token;
@@ -72,29 +64,34 @@ io.use(async (socket, next) => {
   }
 });
 
-// Socket.io events
+// Socket.io connection handling
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
   
-  // User joins chat
+  // Handle user joining
   socket.on('joined', ({ user, userId }) => {
-    // Add user to online users
+    // Store user in online users map
     onlineUsers.set(socket.id, {
       socketId: socket.id,
       userId: userId || socket.userId,
-      name: user
+      name: user,
+      uid: socket.user.uid
     });
     
-    // Broadcast to all users
+    // Broadcast to others that user joined
     socket.broadcast.emit('userJoined', {
       user,
-      message: `${user} has joined the chat`
+      message: `${user} has joined the chat`,
+      uid: socket.user.uid,
+      userId: socket.userId
     });
     
-    // Welcome message to the user who joined
+    // Send welcome message to the user
     socket.emit('welcome', {
       user: 'Admin',
-      message: `Welcome to the chat, ${user}`
+      message: `Welcome to the chat, ${user}`,
+      uid: 'system',
+      userId: 'system'
     });
     
     // Send updated user list to all clients
@@ -102,21 +99,26 @@ io.on('connection', (socket) => {
     io.emit('userList', userList);
   });
   
-  // User sends message
-  socket.on('message', ({ message, id, user }) => {
+  // Handle message sending
+  socket.on('message', ({ message, id, user, uid }) => {
     const userData = onlineUsers.get(socket.id);
     const userName = user || userData?.name || 'Unknown User';
+    const userUid = uid || socket.user.uid || userData?.uid || 'unknown';
     
+    // Broadcast message to all clients
     io.emit('sendMessage', {
       user: userName,
       message,
-      id: socket.id
+      id: socket.id,
+      uid: userUid,
+      userId: socket.userId
     });
     
-    // Save message to in-memory store
+    // Store message in memory
     if (socket.userId) {
       const newMessage = {
         id: generateId(),
+        _id: generateId(), // Add _id for frontend compatibility
         sender: socket.userId,
         content: message,
         timestamp: new Date()
@@ -124,14 +126,14 @@ io.on('connection', (socket) => {
       
       messages.push(newMessage);
       
-      // Limit message history to avoid memory leaks
+      // Keep only last 1000 messages
       if (messages.length > 1000) {
-        messages.shift(); // Remove oldest message if we exceed 1000 messages
+        messages.shift(); 
       }
     }
   });
   
-  // User disconnects
+  // Handle user disconnect
   socket.on('disconnect', () => {
     const userData = onlineUsers.get(socket.id);
     
@@ -140,7 +142,9 @@ io.on('connection', (socket) => {
       
       socket.broadcast.emit('leave', {
         user: 'Admin',
-        message: `${userData.name} has left the chat`
+        message: `${userData.name} has left the chat`,
+        uid: 'system',
+        userId: 'system'
       });
       
       // Send updated user list to all clients
@@ -152,16 +156,25 @@ io.on('connection', (socket) => {
   });
 });
 
-// API Routes
+// REST API Routes
 
-// Register user
+// User registration
 app.post('/register', async (req, res) => {
   const { name, uid, password } = req.body;
   
+  console.log('Registration attempt:', { name, uid, passwordLength: password?.length });
+  
   try {
+    // Validate input
+    if (!name || !uid || !password) {
+      console.log('Missing required fields');
+      return res.status(400).json({ message: 'Name, UID, and password are required' });
+    }
+    
     // Check if user already exists
     if (users.has(uid)) {
-      return res.status(400).json({ message: 'User already exists with this id' });
+      console.log('User already exists with UID:', uid);
+      return res.status(400).json({ message: 'User already exists with this UID' });
     }
     
     // Hash password
@@ -172,19 +185,22 @@ app.post('/register', async (req, res) => {
     const userId = generateId();
     const user = {
       id: userId,
+      _id: userId, // Add _id for frontend compatibility
       name,
       uid,
       password: hashedPassword,
       createdAt: new Date()
     };
     
-    // Store user in memory
+    // Store user
     users.set(uid, user);
     usersById.set(userId, user);
     
-    // Generate session token
+    // Create session
     const sessionToken = generateSessionToken();
     sessions.set(sessionToken, userId);
+    
+    console.log('User registered successfully:', { userId, name, uid });
     
     res.status(201).json({
       id: userId,
@@ -194,30 +210,42 @@ app.post('/register', async (req, res) => {
     });
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ message: 'Server error during registration' });
+    res.status(500).json({ message: 'Server error during registration: ' + error.message });
   }
 });
 
-// Login user
+// User login
 app.post('/login', async (req, res) => {
   const { uid, password } = req.body;
   
+  console.log('Login attempt for UID:', uid);
+  
   try {
+    // Validate input
+    if (!uid || !password) {
+      console.log('Missing UID or password');
+      return res.status(400).json({ message: 'UID and password are required' });
+    }
+    
     // Find user
-    const user = users.get(email);
+    const user = users.get(uid);
     if (!user) {
-      return res.status(400).json({ message: 'Invalid email or password' });
+      console.log('User not found with UID:', uid);
+      return res.status(400).json({ message: 'Invalid UID or password' });
     }
     
     // Check password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid email or password' });
+      console.log('Password mismatch for UID:', uid);
+      return res.status(400).json({ message: 'Invalid UID or password' });
     }
     
-    // Generate session token
+    // Create session
     const sessionToken = generateSessionToken();
     sessions.set(sessionToken, user.id);
+    
+    console.log('User logged in successfully:', { userId: user.id, name: user.name, uid });
     
     res.json({
       id: user.id,
@@ -227,11 +255,11 @@ app.post('/login', async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Server error during login' });
+    res.status(500).json({ message: 'Server error during login: ' + error.message });
   }
 });
 
-// Logout user
+// User logout
 app.post('/logout', async (req, res) => {
   const sessionToken = req.header('Authorization')?.replace('Bearer ', '');
   
@@ -242,7 +270,7 @@ app.post('/logout', async (req, res) => {
   res.status(200).json({ message: 'Logged out successfully' });
 });
 
-// Authentication middleware for API routes
+// Authentication middleware
 const auth = async (req, res, next) => {
   try {
     const sessionToken = req.header('Authorization')?.replace('Bearer ', '');
@@ -269,13 +297,17 @@ const auth = async (req, res, next) => {
   }
 };
 
-// Get all users (requires authentication)
+// Get all users
 app.get('/users', auth, async (req, res) => {
   try {
     const usersList = Array.from(users.values()).map(user => {
-      // Remove password from response
+      // Remove password and add compatibility fields
       const { password, ...userWithoutPassword } = user;
-      return userWithoutPassword;
+      return {
+        ...userWithoutPassword,
+        _id: user.id, // Add _id for frontend compatibility
+        online: false // Will be updated by socket logic
+      };
     });
     
     res.json(usersList);
@@ -285,30 +317,35 @@ app.get('/users', auth, async (req, res) => {
   }
 });
 
-// Get user profile (requires authentication)
+// Get current user
 app.get('/users/me', auth, async (req, res) => {
   res.json({
     id: req.user.id,
+    _id: req.user.id,
     name: req.user.name,
     uid: req.user.uid
   });
 });
 
-// Get chat history (requires authentication)
+// Get chat messages
 app.get('/messages', auth, async (req, res) => {
   try {
-    // Sort messages by timestamp (newest first) and limit to 50
+    // Get recent messages and format them for the frontend
     const recentMessages = [...messages]
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 50)
       .map(message => {
-        // Add sender name to each message
+        // Find sender information
         const sender = usersById.get(message.sender);
         return {
-          ...message,
+          _id: message.id,
+          content: message.content,
+          timestamp: message.timestamp,
           sender: {
+            _id: sender?.id || message.sender,
             id: sender?.id || message.sender,
-            name: sender?.name || 'Unknown User'
+            name: sender?.name || 'Unknown User',
+            uid: sender?.uid || 'unknown'
           }
         };
       });
@@ -320,15 +357,23 @@ app.get('/messages', auth, async (req, res) => {
   }
 });
 
-// Session cleanup - run periodically to remove old sessions
-// In a real app, you would want sessions to expire after some time
-setInterval(() => {
-  // For now, we're not implementing expiration
-  // This is just a placeholder for where you would add that logic
-  console.log(`Active sessions: ${sessions.size}`);
-}, 1000 * 60 * 60); // Log active sessions count every hour
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date(),
+    activeUsers: onlineUsers.size,
+    totalMessages: messages.length
+  });
+});
 
-// Start server
+// Periodic cleanup of old sessions (every hour)
+setInterval(() => {
+  // You could add session expiration logic here
+  console.log(`Active sessions: ${sessions.size}`);
+  console.log(`Online users: ${onlineUsers.size}`);
+}, 1000 * 60 * 60); 
+
 const PORT = process.env.PORT || 8000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

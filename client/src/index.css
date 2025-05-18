@@ -1,6 +1,6 @@
-/* Updated styles.css with message styling and additional components */
 
-/* Join Page Styles */
+
+
 .joinPage {
   display: flex;
   justify-content: center;
@@ -64,7 +64,7 @@
   text-decoration: underline;
 }
 
-/* Chat Page Styles */
+
 .chatPageContainer {
   display: flex;
   height: 100vh;
@@ -268,7 +268,7 @@
   height: 20px;
 }
 
-/* Message Styling */
+
 .messageContainer {
   margin-bottom: 1rem;
   display: flex;
@@ -316,7 +316,7 @@
   padding: 0 0.5rem;
 }
 
-/* Loading and Error States */
+
 .loading,
 .error {
   display: flex;
@@ -338,7 +338,7 @@
   color: #888;
 }
 
-/* Media Queries for Responsive Design */
+
 @media (max-width: 768px) {
   .userSidebar {
     position: absolute;
