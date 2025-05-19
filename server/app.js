@@ -374,7 +374,7 @@ setInterval(() => {
   console.log(`Online users: ${onlineUsers.size}`);
 }, 1000 * 60 * 60); 
 
-const PORT = process.env.SERVER_URL || 8000;
+const PORT = process.env.PORT || 8000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
