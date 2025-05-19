@@ -10,7 +10,7 @@ import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 
 // Server URL - replace with your actual backend URL
-const SERVER_URL = "http://localhost:8000";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 
 // Socket.io connection
 let socket;
