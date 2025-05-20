@@ -5,8 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 
 // Authentication service URL - replace with your actual backend URL
-const AUTH_API_URL = "http://localhost:8000";
-
+const AUTH_API_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:8000";
 const JoinPage = () => {
   const [name, setName] = useState("");
   const [uid, setuid] = useState("");
